@@ -1,0 +1,23 @@
+apiVersion: kubedynamicscaler.io/v1
+kind: GlobalReplicasIgnore
+metadata:
+  name: production-ignores
+spec:
+  # List of namespaces to ignore from scaling
+  ignoreNamespaces:
+    - kube-system
+    - monitoring
+    - logging
+
+  # Specific resources to ignore
+  ignoreResources:
+    - kind: Deployment
+      name: critical-app
+      namespace: production
+    - kind: StatefulSet
+      name: database
+      namespace: production
+
+  # Labels that will cause resources to be ignored
+  ignoreLabels:
+    scaling-disabled: "true"

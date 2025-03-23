@@ -1,0 +1,51 @@
+apiVersion: kubedynamicscaler.io/v1
+kind: ReplicasOverride
+metadata:
+  name: high-load-override
+spec:
+  # Using selector to target deployments with specific labels
+  selector:
+    matchLabels:
+      app: web-service
+      tier: frontend
+  
+  # Override type: can be 'override' or 'additive'
+  overrideType: override
+  
+  # Scale to 150% of original replicas
+  replicasPercentage: 150
+
+---
+# Example using direct deployment reference
+apiVersion: kubedynamicscaler.io/v1
+kind: ReplicasOverride
+metadata:
+  name: specific-deployment-override
+spec:
+  # Direct reference to a specific deployment
+  deploymentRef:
+    name: api-server
+    namespace: backend
+  
+  # Using additive mode
+  overrideType: additive
+  
+  # Add 50% more replicas
+  replicasPercentage: 150
+
+---
+# Example using HPA reference
+apiVersion: kubedynamicscaler.io/v1
+kind: ReplicasOverride
+metadata:
+  name: hpa-override
+spec:
+  # Reference to a specific HPA
+  hpaRef:
+    name: web-hpa
+    namespace: frontend
+  
+  overrideType: override
+  
+  # Scale to 200% of original replicas
+  replicasPercentage: 200 

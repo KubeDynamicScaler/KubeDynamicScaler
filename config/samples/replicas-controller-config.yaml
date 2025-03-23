@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: replicas-controller-config
+  namespace: kubedynamicscaler-system
+data:
+  config.yaml: |
+    globalPercentage: 100
+    maxReplicas: 100
+    minReplicas: 1 
