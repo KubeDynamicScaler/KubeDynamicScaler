@@ -10,6 +10,8 @@
 
 </div>
 
+> ⚠️ **IMPORTANT DISCLAIMER**: This project is currently under active development and is not yet ready for production use. Features may be incomplete, and breaking changes can occur without notice. We recommend using it only for testing and development purposes until a stable release is announced.
+
 KubeDynamicScaler is an open-source Kubernetes controller that revolutionizes how you manage deployment replicas in your clusters. It provides a flexible, dynamic, and automated way to control application scaling through global configurations and specific overrides, while maintaining safety through exclusion rules.
 
 ## 🌟 Key Features
@@ -17,10 +19,11 @@ KubeDynamicScaler is an open-source Kubernetes controller that revolutionizes ho
 - **Global Replica Management**: Define cluster-wide scaling policies
 - **Selective Overrides**: Apply specific scaling rules to targeted deployments
 - **HPA/KEDA Integration**: Seamlessly work with existing auto-scaling solutions
-- **Safety First**: Protect critical systems through namespace and resource exclusions
 - **Flexible Scaling Modes**: 
-  - Override Mode: Complete control over replica count
-  - Additive Mode: Stack percentages for gradual scaling
+  - Global Mode: Defines a percentage for a global adjustment of replicas (can be to increase or to reduce)
+  - Override Mode: Handle percentual override to workloads, selector or namespaces specified
+  - Additive Mode: Stack percentages to be added to the overall percentage
+  - Ignore Mode: Handle exceptions to workloads, selector or namespaces specified
 - **Real-time Updates**: Configuration changes through ConfigMaps without restarts
 - **Prometheus Metrics**: Built-in monitoring and alerting support
 - **Kubernetes Native**: Follows Kubernetes patterns and best practices
@@ -30,10 +33,9 @@ KubeDynamicScaler is an open-source Kubernetes controller that revolutionizes ho
 KubeDynamicScaler addresses common challenges in Kubernetes deployments:
 
 - **Cost Optimization**: Automatically adjust replicas based on global policies
+- **Scheduled Events**: Prepares (warms up) the workload for scheduled events such as Black Friday, Cyber ​​Monday, Marketing Campaigns, etc.
 - **Resource Efficiency**: Fine-tune scaling based on actual needs
-- **Operational Safety**: Protect critical services from unintended scaling
-- **Flexibility**: Combine global policies with specific overrides
-- **Enterprise Ready**: Production-tested with monitoring and safety features
+- **Enterprise Ready**: Production-tested with monitoring and safety features to avoid the famous scripts with cronjobs for massive changes
 
 ## 🚀 Quick Start
 
@@ -118,10 +120,7 @@ Ways you can contribute:
 See our [GitHub Project Board](https://github.com/KubeDynamicScaler/kubedynamicscaler/projects/1) for planned features and enhancements.
 
 Upcoming features:
-- [ ] Multi-cluster support
-- [ ] Advanced scheduling policies
-- [ ] AI-driven scaling recommendations
-- [ ] Enhanced metric-based decisions
+
 - [ ] Custom scaling algorithms
 
 ## 📜 License
@@ -131,15 +130,11 @@ KubeDynamicScaler is licensed under the Apache License 2.0 - see the [LICENSE](L
 ## 🌟 Acknowledgments
 
 Special thanks to:
-- The Kubernetes community
+
 - All our contributors
 - Companies using and supporting KubeDynamicScaler
 
 ## 📫 Community & Support
 
-- [Slack Channel](https://kubernetes.slack.com/messages/kubedynamicscaler)
-- [Twitter](https://twitter.com/kubedynamicscaler)
 - [GitHub Discussions](https://github.com/KubeDynamicScaler/kubedynamicscaler/discussions)
-- [Stack Overflow](https://stackoverflow.com/questions/tagged/kubedynamicscaler)
 
-For commercial support, please contact: support@kubedynamicscaler.io 
