@@ -20,6 +20,7 @@ const (
 	LastUpdateAnnotation          = annotationDomain + "/last-update"
 	ManagedAnnotation             = annotationDomain + "/managed"
 	GlobalConfigManagedAnnotation = annotationDomain + "/global-config-managed"
+	ManagementModeAnnotation      = annotationDomain + "/management-mode" // Values: "direct" or "hpa"
 
 	// HPA specific annotations
 	HPAManagedAnnotation          = annotationDomain + "/hpa-managed"

@@ -1,0 +1,18 @@
+apiVersion: kubedynamicscaler.io/v1
+kind: ReplicasOverride
+metadata:
+  name: critical-workload-override
+spec:
+  # Using selector to target deployments with specific labels
+  selector:
+    matchLabels:
+      workload: critical
+      policy: black-friday
+  
+  # Override type: can be 'override' or 'additive'
+  overrideType: override
+  
+  # Scale to 150% of original replicas
+  replicasPercentage: 200
+
+---

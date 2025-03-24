@@ -101,6 +101,8 @@ func (m *Manager) GetConfig() *GlobalConfig {
 
 // loadConfig loads the configuration from the ConfigMap
 func (m *Manager) loadConfig(ctx context.Context) error {
+	log := log.FromContext(ctx)
+
 	// Create a namespaced client
 	namespacedClient := client.NewNamespacedClient(m.client, m.namespace)
 
@@ -126,6 +128,12 @@ func (m *Manager) loadConfig(ctx context.Context) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	m.config = config
+
+	// Log the loaded configuration
+	log.Info("Configuration loaded successfully",
+		"globalPercentage", config.GlobalPercentage,
+		"maxReplicas", config.MaxReplicas,
+		"minReplicas", config.MinReplicas)
 
 	return nil
 }

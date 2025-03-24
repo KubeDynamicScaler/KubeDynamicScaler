@@ -62,6 +62,7 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			// Not found error, try to handle as global config
+			// Get the deployment from the same namespace as the request
 			deployment := &appsv1.Deployment{}
 			err := r.Get(ctx, types.NamespacedName{
 				Name:      req.Name,
@@ -107,12 +108,19 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// If using DeploymentRef, get only that deployment
 	if override.Spec.DeploymentRef != nil {
 		deployment := &appsv1.Deployment{}
+		targetNamespace := override.Spec.DeploymentRef.Namespace
+		if targetNamespace == "" {
+			// If namespace is not specified in DeploymentRef, use the override's namespace
+			targetNamespace = override.Namespace
+		}
 		err := r.Get(ctx, types.NamespacedName{
 			Name:      override.Spec.DeploymentRef.Name,
-			Namespace: override.Spec.DeploymentRef.Namespace,
+			Namespace: targetNamespace,
 		}, deployment)
 		if err != nil {
-			log.Error(err, "Failed to get deployment", "deployment", override.Spec.DeploymentRef.Name)
+			log.Error(err, "Failed to get deployment",
+				"deployment", override.Spec.DeploymentRef.Name,
+				"namespace", targetNamespace)
 			return ctrl.Result{}, err
 		}
 		deployments.Items = []appsv1.Deployment{*deployment}
@@ -209,6 +217,22 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 func (r *ReplicasOverrideReconciler) processDeployment(ctx context.Context, deployment *appsv1.Deployment, override *dynamicscalingv1.ReplicasOverride) error {
 	log := log.FromContext(ctx)
 
+	// Check if there's an HPA managing this deployment
+	hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
+	if err := r.List(ctx, hpaList, client.InNamespace(deployment.Namespace)); err != nil {
+		return err
+	}
+
+	var existingHPA *autoscalingv2.HorizontalPodAutoscaler
+	for _, hpa := range hpaList.Items {
+		if hpa.Spec.ScaleTargetRef.Kind == "Deployment" &&
+			hpa.Spec.ScaleTargetRef.Name == deployment.Name &&
+			hpa.Spec.ScaleTargetRef.APIVersion == "apps/v1" {
+			existingHPA = &hpa
+			break
+		}
+	}
+
 	// Get current annotations or initialize empty map
 	if deployment.Annotations == nil {
 		deployment.Annotations = make(map[string]string)
@@ -216,7 +240,12 @@ func (r *ReplicasOverrideReconciler) processDeployment(ctx context.Context, depl
 
 	// Store original replicas if not already stored
 	if _, exists := deployment.Annotations[utils.OriginalReplicasAnnotation]; !exists {
-		deployment.Annotations[utils.OriginalReplicasAnnotation] = strconv.FormatInt(int64(*deployment.Spec.Replicas), 10)
+		if existingHPA != nil {
+			// If HPA exists, use its minReplicas as the original replicas
+			deployment.Annotations[utils.OriginalReplicasAnnotation] = strconv.FormatInt(int64(*existingHPA.Spec.MinReplicas), 10)
+		} else {
+			deployment.Annotations[utils.OriginalReplicasAnnotation] = strconv.FormatInt(int64(*deployment.Spec.Replicas), 10)
+		}
 	}
 
 	// Mark as managed by us
@@ -225,6 +254,33 @@ func (r *ReplicasOverrideReconciler) processDeployment(ctx context.Context, depl
 		deployment.Annotations[utils.ManagedAnnotation] = "true"
 	} else {
 		deployment.Annotations[utils.GlobalConfigManagedAnnotation] = "true"
+	}
+
+	// Add management mode annotation for troubleshooting
+	if existingHPA != nil {
+		deployment.Annotations[utils.ManagementModeAnnotation] = "hpa"
+		// Update the deployment first with retry
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Get the latest version before attempting to update
+			latest := &appsv1.Deployment{}
+			if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, latest); err != nil {
+				return err
+			}
+			// Copy annotations to latest version
+			if latest.Annotations == nil {
+				latest.Annotations = make(map[string]string)
+			}
+			latest.Annotations[utils.ManagementModeAnnotation] = "hpa"
+			latest.Annotations[utils.GlobalConfigManagedAnnotation] = "true"
+			return r.Update(ctx, latest)
+		})
+		if err != nil {
+			return err
+		}
+		// Then process the HPA
+		return r.processHPA(ctx, existingHPA, override)
+	} else {
+		deployment.Annotations[utils.ManagementModeAnnotation] = "direct"
 	}
 
 	// Get global config
@@ -256,7 +312,13 @@ func (r *ReplicasOverrideReconciler) processDeployment(ctx context.Context, depl
 		targetReplicas = config.MaxReplicas
 	}
 
-	// Update replicas
+	// If HPA exists, let it manage the replicas
+	if existingHPA != nil {
+		// Only update the HPA
+		return r.processHPA(ctx, existingHPA, override)
+	}
+
+	// Update replicas only if no HPA exists
 	deployment.Spec.Replicas = &targetReplicas
 	deployment.Annotations[utils.LastUpdateAnnotation] = time.Now().UTC().Format(time.RFC3339)
 
@@ -265,29 +327,11 @@ func (r *ReplicasOverrideReconciler) processDeployment(ctx context.Context, depl
 		"namespace", deployment.Namespace,
 		"originalReplicas", deployment.Annotations[utils.OriginalReplicasAnnotation],
 		"newReplicas", targetReplicas,
-		"percentage", percentage)
+		"percentage", percentage,
+		"managementMode", deployment.Annotations[utils.ManagementModeAnnotation])
 
 	// Update the deployment
-	if err := r.Update(ctx, deployment); err != nil {
-		return err
-	}
-
-	// Process HPA if exists
-	hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
-	if err := r.List(ctx, hpaList, client.InNamespace(deployment.Namespace)); err != nil {
-		return err
-	}
-
-	// Find HPA that targets this deployment
-	for _, hpa := range hpaList.Items {
-		if hpa.Spec.ScaleTargetRef.Kind == "Deployment" &&
-			hpa.Spec.ScaleTargetRef.Name == deployment.Name &&
-			hpa.Spec.ScaleTargetRef.APIVersion == "apps/v1" {
-			return r.processHPA(ctx, &hpa, override)
-		}
-	}
-
-	return nil
+	return r.Update(ctx, deployment)
 }
 
 func calculateTargetReplicas(deployment *appsv1.Deployment, percentage int32) int32 {
@@ -407,91 +451,63 @@ func (r *ReplicasOverrideReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&dynamicscalingv1.ReplicasOverride{}).
 		Watches(
 			&appsv1.Deployment{},
-			handler.EnqueueRequestsFromMapFunc(r.findReplicasOverridesForDeployment),
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				deployment, ok := obj.(*appsv1.Deployment)
+				if !ok {
+					return nil
+				}
+
+				// Check for ignore rules first
+				ignoreList := &dynamicscalingv1.GlobalReplicasIgnoreList{}
+				if err := r.List(ctx, ignoreList); err != nil {
+					return nil
+				}
+
+				for _, ignore := range ignoreList.Items {
+					if shouldIgnore, _ := utils.ShouldIgnoreDeployment(deployment, &ignore); shouldIgnore {
+						return nil
+					}
+				}
+
+				// Get all ReplicasOverrides
+				overrideList := &dynamicscalingv1.ReplicasOverrideList{}
+				if err := r.List(ctx, overrideList); err != nil {
+					return nil
+				}
+
+				var requests []reconcile.Request
+				foundMatch := false
+
+				// Check each override for a match
+				for _, override := range overrideList.Items {
+					if shouldProcessDeployment(deployment, &override) {
+						requests = append(requests, reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      override.Name,
+								Namespace: override.Namespace,
+							},
+						})
+						foundMatch = true
+					}
+				}
+
+				// If no specific override matches and deployment is not ignored, use global config
+				if !foundMatch {
+					// Process with global config
+					deployment.Annotations[utils.GlobalConfigManagedAnnotation] = "true"
+					if err := r.Update(ctx, deployment); err != nil {
+						return nil
+					}
+				}
+
+				return requests
+			}),
 		).
 		Watches(
 			&autoscalingv2.HorizontalPodAutoscaler{},
 			handler.EnqueueRequestsFromMapFunc(r.findReplicasOverridesForHPA),
 		).
 		Complete(r)
-}
-
-// findReplicasOverridesForDeployment maps a Deployment to a list of ReplicasOverride requests
-func (r *ReplicasOverrideReconciler) findReplicasOverridesForDeployment(ctx context.Context, obj client.Object) []reconcile.Request {
-	log := log.FromContext(ctx)
-	deployment, ok := obj.(*appsv1.Deployment)
-	if !ok {
-		log.Error(nil, "Expected a Deployment but got something else", "object", obj)
-		return nil
-	}
-
-	// Check for ignore rules first
-	ignoreList := &dynamicscalingv1.GlobalReplicasIgnoreList{}
-	if err := r.List(ctx, ignoreList); err != nil {
-		log.Error(err, "Failed to list ignore rules")
-		return nil
-	}
-
-	for _, ignore := range ignoreList.Items {
-		if shouldIgnore, _ := utils.ShouldIgnoreDeployment(deployment, &ignore); shouldIgnore {
-			return nil
-		}
-	}
-
-	// Get all ReplicasOverrides
-	overrideList := &dynamicscalingv1.ReplicasOverrideList{}
-	if err := r.List(ctx, overrideList); err != nil {
-		log.Error(err, "Failed to list ReplicasOverrides")
-		return nil
-	}
-
-	var requests []reconcile.Request
-
-	// Check each override for a match
-	foundMatch := false
-	for _, override := range overrideList.Items {
-		if override.Spec.DeploymentRef != nil &&
-			override.Spec.DeploymentRef.Name == deployment.Name &&
-			override.Spec.DeploymentRef.Namespace == deployment.Namespace {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      override.Name,
-					Namespace: override.Namespace,
-				},
-			})
-			foundMatch = true
-		} else if override.Spec.Selector != nil && len(override.Spec.Selector.MatchLabels) > 0 {
-			// Check if deployment labels match the selector
-			match := true
-			for key, value := range override.Spec.Selector.MatchLabels {
-				if deployment.Labels[key] != value {
-					match = false
-					break
-				}
-			}
-			if match {
-				requests = append(requests, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name:      override.Name,
-						Namespace: override.Namespace,
-					},
-				})
-				foundMatch = true
-			}
-		}
-	}
-
-	// If no override matches, create a request for global rules
-	if !foundMatch {
-		requests = append(requests, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      deployment.Name,
-				Namespace: deployment.Namespace,
-			},
-		})
-	}
-
-	return requests
 }
 
 // findReplicasOverridesForHPA maps an HPA to a list of ReplicasOverride requests
@@ -535,9 +551,9 @@ func (r *ReplicasOverrideReconciler) findReplicasOverridesForHPA(ctx context.Con
 	}
 
 	var requests []reconcile.Request
+	foundMatch := false
 
 	// Check each override for a match
-	foundMatch := false
 	for _, override := range overrideList.Items {
 		if override.Spec.DeploymentRef != nil &&
 			override.Spec.DeploymentRef.Name == deployment.Name &&

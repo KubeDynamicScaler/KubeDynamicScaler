@@ -1,0 +1,17 @@
+---
+# Example using direct deployment reference
+apiVersion: kubedynamicscaler.io/v1
+kind: ReplicasOverride
+metadata:
+  name: nginx-test-override
+spec:
+  # Direct reference to a specific deployment
+  deploymentRef:
+    name: nginx-test
+    namespace: default
+  
+  # Using additive mode
+  overrideType: override
+  
+  # Add 50% more replicas
+  replicasPercentage: 200

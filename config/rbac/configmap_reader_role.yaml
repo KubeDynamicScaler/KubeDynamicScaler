@@ -1,23 +1,21 @@
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: kubedynamicscaler-configmap-reader
-  namespace: kubedynamicscaler-system
 rules:
 - apiGroups: [""]
   resources: ["configmaps"]
   verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
   name: kubedynamicscaler-configmap-reader-binding
-  namespace: kubedynamicscaler-system
 subjects:
 - kind: ServiceAccount
   name: kubedynamicscaler-controller-manager
   namespace: kubedynamicscaler-system
 roleRef:
-  kind: Role
+  kind: ClusterRole
   name: kubedynamicscaler-configmap-reader
   apiGroup: rbac.authorization.k8s.io 
