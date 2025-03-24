@@ -118,9 +118,10 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			Namespace: targetNamespace,
 		}, deployment)
 		if err != nil {
-			log.Error(err, "Failed to get deployment",
-				"deployment", override.Spec.DeploymentRef.Name,
-				"namespace", targetNamespace)
+			if client.IgnoreNotFound(err) == nil {
+				// If deployment is not found, we don't need to do anything
+				return ctrl.Result{}, nil
+			}
 			return ctrl.Result{}, err
 		}
 		deployments.Items = []appsv1.Deployment{*deployment}
@@ -130,6 +131,138 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		if err := r.List(ctx, deployments, listOpts...); err != nil {
 			log.Error(err, "Failed to list deployments")
 			return ctrl.Result{}, err
+		}
+	}
+
+	// Get previously affected deployments that might no longer match
+	for _, affected := range override.Status.AffectedDeployments {
+		found := false
+		for _, deployment := range deployments.Items {
+			if deployment.Name == affected.Name && deployment.Namespace == affected.Namespace {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// This deployment was previously affected but no longer matches
+			// We need to clean it up
+			deployment := &appsv1.Deployment{}
+			err := r.Get(ctx, types.NamespacedName{
+				Name:      affected.Name,
+				Namespace: affected.Namespace,
+			}, deployment)
+			if err != nil {
+				if client.IgnoreNotFound(err) == nil {
+					continue
+				}
+				log.Error(err, "Failed to get previously affected deployment")
+				continue
+			}
+
+			// Clean up override annotations
+			err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				latest := &appsv1.Deployment{}
+				if err := r.Get(ctx, types.NamespacedName{
+					Name:      deployment.Name,
+					Namespace: deployment.Namespace,
+				}, latest); err != nil {
+					return err
+				}
+
+				// Store original replicas before cleaning up
+				originalReplicas := ""
+				if val, exists := latest.Annotations[utils.OriginalReplicasAnnotation]; exists {
+					originalReplicas = val
+				}
+
+				// Remove all controller annotations
+				delete(latest.Annotations, utils.OverrideControllerAnnotation)
+				delete(latest.Annotations, utils.ManagedAnnotation)
+				delete(latest.Annotations, utils.GlobalConfigManagedAnnotation)
+				delete(latest.Annotations, utils.ManagementModeAnnotation)
+				delete(latest.Annotations, utils.LastUpdateAnnotation)
+				delete(latest.Annotations, utils.OriginalReplicasAnnotation)
+
+				// Reset to original replicas if we had stored them
+				if originalReplicas != "" {
+					replicas, _ := strconv.ParseInt(originalReplicas, 10, 32)
+					count := int32(replicas)
+					latest.Spec.Replicas = &count
+				}
+
+				// Clean up any associated HPA
+				hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
+				if err := r.List(ctx, hpaList, client.InNamespace(latest.Namespace)); err != nil {
+					return err
+				}
+
+				for _, hpa := range hpaList.Items {
+					if hpa.Spec.ScaleTargetRef.Kind == "Deployment" &&
+						hpa.Spec.ScaleTargetRef.Name == latest.Name &&
+						hpa.Spec.ScaleTargetRef.APIVersion == "apps/v1" {
+
+						// Clean up HPA annotations and reset to original values
+						err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+							latestHPA := &autoscalingv2.HorizontalPodAutoscaler{}
+							if err := r.Get(ctx, types.NamespacedName{
+								Name:      hpa.Name,
+								Namespace: hpa.Namespace,
+							}, latestHPA); err != nil {
+								return err
+							}
+
+							// Store original values before cleaning
+							originalMin := ""
+							originalMax := ""
+							if val, exists := latestHPA.Annotations[utils.OriginalMinReplicasAnnotation]; exists {
+								originalMin = val
+							}
+							if val, exists := latestHPA.Annotations[utils.OriginalMaxReplicasAnnotation]; exists {
+								originalMax = val
+							}
+
+							// Remove all controller annotations
+							delete(latestHPA.Annotations, utils.OverrideControllerAnnotation)
+							delete(latestHPA.Annotations, utils.ManagedAnnotation)
+							delete(latestHPA.Annotations, utils.GlobalConfigManagedAnnotation)
+							delete(latestHPA.Annotations, utils.HPAManagedAnnotation)
+							delete(latestHPA.Annotations, utils.LastHPAUpdateAnnotation)
+							delete(latestHPA.Annotations, utils.OriginalMinReplicasAnnotation)
+							delete(latestHPA.Annotations, utils.OriginalMaxReplicasAnnotation)
+
+							// Reset to original values if we had stored them
+							if originalMin != "" {
+								minReplicas, _ := strconv.ParseInt(originalMin, 10, 32)
+								min := int32(minReplicas)
+								latestHPA.Spec.MinReplicas = &min
+							}
+							if originalMax != "" {
+								maxReplicas, _ := strconv.ParseInt(originalMax, 10, 32)
+								latestHPA.Spec.MaxReplicas = int32(maxReplicas)
+							}
+
+							return r.Update(ctx, latestHPA)
+						})
+						if err != nil {
+							log.Error(err, "Failed to clean up HPA", "hpa", hpa.Name)
+						} else {
+							log.Info("Cleaned up HPA that was associated with deployment",
+								"hpa", hpa.Name,
+								"namespace", hpa.Namespace)
+						}
+						break
+					}
+				}
+
+				return r.Update(ctx, latest)
+			})
+			if err != nil {
+				log.Error(err, "Failed to clean up deployment", "deployment", affected.Name)
+			} else {
+				log.Info("Cleaned up deployment that no longer matches override",
+					"deployment", affected.Name,
+					"namespace", affected.Namespace)
+			}
 		}
 	}
 
