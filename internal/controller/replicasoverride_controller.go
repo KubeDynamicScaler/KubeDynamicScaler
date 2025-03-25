@@ -58,17 +58,17 @@ type ReplicasOverrideReconciler struct {
 func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	// 1. Primeiro, obtém a lista de deployments ignorados
+	// 1. First, get the list of ignored deployments
 	ignoreList := &dynamicscalingv1.GlobalReplicasIgnoreList{}
 	if err := r.List(ctx, ignoreList); err != nil {
 		log.Error(err, "Failed to list ignore rules")
 		return ctrl.Result{}, err
 	}
 
-	// Cria um mapa de deployments ignorados para acesso rápido
+	// Create a map of ignored deployments for quick access
 	ignoredDeployments := make(map[string]bool)
 	for _, ignore := range ignoreList.Items {
-		// Verifica por namespace
+		// Verifies by namespace
 		for _, namespace := range ignore.Spec.IgnoreNamespaces {
 			deployments := &appsv1.DeploymentList{}
 			if err := r.List(ctx, deployments, client.InNamespace(namespace)); err != nil {
@@ -79,7 +79,7 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}
 		}
 
-		// Verifica por recursos específicos
+		// Verifies by specific resources
 		for _, resource := range ignore.Spec.IgnoreResources {
 			if resource.Kind == "Deployment" {
 				namespace := resource.Namespace
@@ -90,7 +90,7 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}
 		}
 
-		// Verifica por labels
+		// Verifies by labels
 		if len(ignore.Spec.IgnoreLabels) > 0 {
 			deployments := &appsv1.DeploymentList{}
 			if err := r.List(ctx, deployments, client.MatchingLabels(ignore.Spec.IgnoreLabels)); err != nil {
@@ -102,14 +102,14 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
-	// 2. Lista todos os namespaces, exceto os ignorados
+	// 2. List all namespaces except the ignored ones
 	namespaces := &corev1.NamespaceList{}
 	if err := r.List(ctx, namespaces); err != nil {
 		log.Error(err, "Failed to list namespaces")
 		return ctrl.Result{}, err
 	}
 
-	// Cria um mapa de namespaces ignorados para acesso rápido
+	// Create a map of ignored namespaces for quick access
 	ignoredNamespaces := make(map[string]bool)
 	for _, ignore := range ignoreList.Items {
 		for _, namespace := range ignore.Spec.IgnoreNamespaces {
@@ -117,28 +117,28 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
-	// 3. Para cada namespace não ignorado, lista e processa os deployments
+	// 3. For each namespace not ignored, list and process the deployments
 	for _, namespace := range namespaces.Items {
-		// Pula se o namespace estiver na lista de ignorados
+		// Skips if the namespace is in the ignored list
 		if ignoredNamespaces[namespace.Name] {
 			continue
 		}
 
-		// Lista todos os deployments no namespace
+		// List all deployments in the namespace
 		deployments := &appsv1.DeploymentList{}
 		if err := r.List(ctx, deployments, client.InNamespace(namespace.Name)); err != nil {
 			log.Error(err, "Failed to list deployments in namespace", "namespace", namespace.Name)
 			continue
 		}
 
-		// 4. Para cada deployment, verifica se deve ser processado
+		// 4. For each deployment, check if it should be processed
 		for _, deployment := range deployments.Items {
-			// Pula se estiver na lista de ignorados
+			// Skips if it's in the ignored list
 			if ignoredDeployments[deployment.Namespace+"/"+deployment.Name] {
 				continue
 			}
 
-			// 5. Verifica se tem override específico
+			// 5. Check if there's a specific override
 			var override *dynamicscalingv1.ReplicasOverride
 			overrideList := &dynamicscalingv1.ReplicasOverrideList{}
 			if err := r.List(ctx, overrideList, client.InNamespace(deployment.Namespace)); err != nil {
@@ -146,7 +146,7 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				continue
 			}
 
-			// Procura por um override que corresponda ao deployment
+			// Search for an override that matches the deployment
 			for _, o := range overrideList.Items {
 				if o.Spec.DeploymentRef != nil {
 					if o.Spec.DeploymentRef.Name == deployment.Name &&
@@ -169,7 +169,7 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				}
 			}
 
-			// 6. Processa o deployment com override ou configuração global
+			// 6. Process the deployment with the override or global configuration
 			if err := r.processDeployment(ctx, &deployment, override); err != nil {
 				log.Error(err, "Failed to process deployment",
 					"deployment", deployment.Name,
@@ -178,9 +178,9 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				continue
 			}
 
-			// Atualiza o status do override com o deployment afetado
+			// Update the override status with the affected deployment
 			if override != nil {
-				// Verifica se o deployment já está no status
+				// Check if the deployment already exists in the status
 				deploymentExists := false
 				for _, affected := range override.Status.AffectedDeployments {
 					if affected.Name == deployment.Name && affected.Namespace == deployment.Namespace {
@@ -190,7 +190,7 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 					}
 				}
 
-				// Se não existe, adiciona ao status
+				// If it doesn't exist, add to the status
 				if !deploymentExists {
 					override.Status.AffectedDeployments = append(override.Status.AffectedDeployments, dynamicscalingv1.AffectedDeployment{
 						Name:            deployment.Name,
@@ -199,7 +199,7 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 					})
 				}
 
-				// Atualiza o status do override
+				// Update the override status
 				if err := r.Status().Update(ctx, override); err != nil {
 					log.Error(err, "Failed to update override status",
 						"override", override.Name,

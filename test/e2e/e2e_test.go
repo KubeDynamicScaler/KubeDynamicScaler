@@ -31,16 +31,16 @@ import (
 )
 
 // namespace where the project is deployed in
-const namespace = "kscale-system"
+const namespace = "kubedynamicscaler-system"
 
 // serviceAccountName created for the project
-const serviceAccountName = "kscale-controller-manager"
+const serviceAccountName = "kubedynamicscaler-controller-manager"
 
 // metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "kscale-controller-manager-metrics-service"
+const metricsServiceName = "kubedynamicscaler-controller-manager-metrics-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "kscale-metrics-binding"
+const metricsRoleBindingName = "kubedynamicscaler-metrics-binding"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -173,7 +173,7 @@ var _ = Describe("Manager", Ordered, func() {
 		It("should ensure the metrics endpoint is serving metrics", func() {
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=kscale-metrics-reader",
+				"--clusterrole=kubedynamicscaler-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
 			)
 			_, err := utils.Run(cmd)
