@@ -45,6 +45,40 @@ var _ = Describe("ReplicasOverride Controller", func() {
 		)
 
 		BeforeEach(func() {
+			// Clean up any existing ConfigMap first
+			existingConfigMap := &corev1.ConfigMap{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "replicas-controller-config",
+				Namespace: "kubedynamicscaler-system",
+			}, existingConfigMap)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, existingConfigMap)).Should(Succeed())
+			}
+
+			// Create global config ConfigMap
+			globalConfig := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "replicas-controller-config",
+					Namespace: "kubedynamicscaler-system",
+				},
+				Data: map[string]string{
+					"config.yaml": `
+globalPercentage: 200
+minReplicas: 1
+maxReplicas: 10
+`,
+				},
+			}
+			Expect(k8sClient.Create(ctx, globalConfig)).Should(Succeed())
+
+			// Wait for ConfigMap to be created
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{
+					Name:      globalConfig.Name,
+					Namespace: globalConfig.Namespace,
+				}, globalConfig)
+			}, timeout, interval).Should(Succeed())
+
 			// Create a test deployment
 			deployment = &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -118,9 +152,19 @@ var _ = Describe("ReplicasOverride Controller", func() {
 			// Clean up resources
 			Expect(k8sClient.Delete(ctx, deployment)).Should(Succeed())
 			Expect(k8sClient.Delete(ctx, override)).Should(Succeed())
+
+			// Clean up ConfigMap
+			configMap := &corev1.ConfigMap{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "replicas-controller-config",
+				Namespace: "kubedynamicscaler-system",
+			}, configMap)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, configMap)).Should(Succeed())
+			}
 		})
 
-		It("Should scale up a deployment and set proper annotations", func() {
+		It("Should scale deployment to 150% when using a ReplicasOverride with 150% percentage", func() {
 			// Wait for the deployment to be scaled
 			deploymentLookupKey := types.NamespacedName{Name: "test-deployment", Namespace: "default"}
 			scaledDeployment := &appsv1.Deployment{}
@@ -133,7 +177,7 @@ var _ = Describe("ReplicasOverride Controller", func() {
 				}
 				fmt.Printf("Current replicas: %d\n", *scaledDeployment.Spec.Replicas)
 				return *scaledDeployment.Spec.Replicas
-			}, timeout, interval).Should(Equal(int32(3)), "Deployment should have 3 replicas")
+			}, timeout, interval).Should(Equal(int32(3)), "Deployment should have 3 replicas (150% of original 2)")
 
 			// Verify annotations
 			Expect(scaledDeployment.Annotations).Should(HaveKey(utils.OriginalReplicasAnnotation))
@@ -163,7 +207,7 @@ var _ = Describe("ReplicasOverride Controller", func() {
 			Expect(updatedOverride.Status.AffectedDeployments[0].CurrentReplicas).Should(Equal(int32(3)))
 		})
 
-		It("Should update HPA limits and set proper annotations", func() {
+		It("Should update HPA limits to 150% when using a ReplicasOverride with 150% percentage", func() {
 			// Create an HPA
 			hpa := &autoscalingv2.HorizontalPodAutoscaler{
 				ObjectMeta: metav1.ObjectMeta{
@@ -231,7 +275,7 @@ var _ = Describe("ReplicasOverride Controller", func() {
 			Expect(k8sClient.Delete(ctx, hpa)).Should(Succeed())
 		})
 
-		It("Should apply global rules when no override is found", func() {
+		It("Should scale deployment to 200% when using global configuration with 200% percentage", func() {
 			// Create a new deployment without any matching override
 			globalDeployment := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -240,9 +284,12 @@ var _ = Describe("ReplicasOverride Controller", func() {
 					Labels: map[string]string{
 						"app": "global-test",
 					},
+					Annotations: map[string]string{
+						utils.GlobalConfigManagedAnnotation: "true",
+					},
 				},
 				Spec: appsv1.DeploymentSpec{
-					Replicas: int32Ptr(4),
+					Replicas: int32Ptr(2),
 					Selector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
 							"app": "global-test",
@@ -297,21 +344,21 @@ var _ = Describe("ReplicasOverride Controller", func() {
 				}
 
 				// Verify original replicas are stored
-				if scaledDeployment.Annotations[utils.OriginalReplicasAnnotation] != "4" {
+				if scaledDeployment.Annotations[utils.OriginalReplicasAnnotation] != "2" {
 					return false
 				}
 
-				// Calculate expected replicas based on global config percentage (100%)
-				expectedReplicas := int32(4) // Original replicas * 100%
+				// Calculate expected replicas based on global config percentage (200%)
+				expectedReplicas := int32(4) // Original replicas * 200%
 				fmt.Printf("Current replicas: %d, Expected replicas: %d\n", *scaledDeployment.Spec.Replicas, expectedReplicas)
 				return *scaledDeployment.Spec.Replicas == expectedReplicas
-			}, timeout, interval).Should(BeTrue(), "Deployment should be scaled according to global rules (100% of original 4 replicas)")
+			}, timeout, interval).Should(BeTrue(), "Deployment should be scaled according to global rules (200% of original 2 replicas)")
 
 			// Clean up the test deployment
 			Expect(k8sClient.Delete(ctx, globalDeployment)).Should(Succeed())
 		})
 
-		It("Should apply global rules to HPA when no override is found", func() {
+		It("Should update HPA limits to 200% when using global configuration with 200% percentage", func() {
 			// Create a deployment first
 			globalDeployment := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
@@ -319,6 +366,7 @@ var _ = Describe("ReplicasOverride Controller", func() {
 					Namespace: "default",
 				},
 				Spec: appsv1.DeploymentSpec{
+					Replicas: int32Ptr(2),
 					Selector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
 							"app": "global-test",
@@ -397,8 +445,8 @@ var _ = Describe("ReplicasOverride Controller", func() {
 				}
 
 				// Verify HPA limits were updated according to global config
-				expectedMinReplicas := int32(2)  // Original min replicas * 100%
-				expectedMaxReplicas := int32(10) // Original max replicas * 100%
+				expectedMinReplicas := int32(4)  // Original min replicas * 200%
+				expectedMaxReplicas := int32(20) // Original max replicas * 200%
 				return *updatedHPA.Spec.MinReplicas == expectedMinReplicas && updatedHPA.Spec.MaxReplicas == expectedMaxReplicas
 			}, timeout, interval).Should(BeTrue(), "HPA should be managed by global rules")
 

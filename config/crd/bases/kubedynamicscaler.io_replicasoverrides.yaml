@@ -73,6 +73,20 @@ spec:
                 required:
                 - name
                 type: object
+              maxReplicas:
+                description: |-
+                  MaxReplicas specifies the maximum number of replicas allowed.
+                  If not specified, the global maxReplicas from the config will be used.
+                format: int32
+                minimum: 1
+                type: integer
+              minReplicas:
+                description: |-
+                  MinReplicas specifies the minimum number of replicas allowed.
+                  If not specified, the global minReplicas from the config will be used.
+                format: int32
+                minimum: 1
+                type: integer
               overrideType:
                 default: override
                 description: |-

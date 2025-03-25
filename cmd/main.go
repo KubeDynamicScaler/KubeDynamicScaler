@@ -203,19 +203,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.ReplicasOverrideReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Config: config.NewManager(mgr.GetClient()),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ReplicasOverride")
-		os.Exit(1)
-	}
-
-	// Setup ConfigManager
+	// Setup ConfigManager first
 	configManager := config.NewManager(mgr.GetClient())
 	if err = configManager.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to setup config manager")
+		os.Exit(1)
+	}
+
+	if err = (&controller.ReplicasOverrideReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Config: configManager, // Use the same instance
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ReplicasOverride")
 		os.Exit(1)
 	}
 

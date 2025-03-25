@@ -16,34 +16,84 @@ func int32Ptr(v int32) *int32 {
 
 func TestCalculateNewReplicas(t *testing.T) {
 	tests := []struct {
-		name     string
-		replicas int32
-		percent  int32
-		want     int32
+		name        string
+		replicas    int32
+		percent     int32
+		minReplicas *int32
+		maxReplicas *int32
+		want        int32
 	}{
 		{
-			name:     "100% keeps same replicas",
-			replicas: 4,
-			percent:  100,
-			want:     4,
+			name:        "100% keeps same replicas",
+			replicas:    4,
+			percent:     100,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			want:        4,
 		},
 		{
-			name:     "150% increases replicas",
-			replicas: 4,
-			percent:  150,
-			want:     6,
+			name:        "150% increases replicas but respects max",
+			replicas:    4,
+			percent:     150,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			want:        5,
 		},
 		{
-			name:     "50% decreases replicas",
-			replicas: 4,
-			percent:  50,
-			want:     2,
+			name:        "50% decreases replicas but respects min",
+			replicas:    4,
+			percent:     50,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			want:        2,
 		},
 		{
-			name:     "75% rounds correctly",
-			replicas: 4,
-			percent:  75,
-			want:     3,
+			name:        "75% rounds correctly",
+			replicas:    4,
+			percent:     75,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			want:        3,
+		},
+		{
+			name:        "respects min replicas (case 1)",
+			replicas:    3,
+			percent:     10,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			want:        2,
+		},
+		{
+			name:        "respects max replicas (case 2)",
+			replicas:    2,
+			percent:     400,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			want:        5,
+		},
+		{
+			name:        "respects min replicas with small percentage",
+			replicas:    5,
+			percent:     20,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			want:        2,
+		},
+		{
+			name:        "respects max replicas with large percentage",
+			replicas:    3,
+			percent:     500,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			want:        5,
+		},
+		{
+			name:        "no limits specified",
+			replicas:    4,
+			percent:     150,
+			minReplicas: nil,
+			maxReplicas: nil,
+			want:        6,
 		},
 	}
 
@@ -58,6 +108,8 @@ func TestCalculateNewReplicas(t *testing.T) {
 			override := &dynamicscalingv1.ReplicasOverride{
 				Spec: dynamicscalingv1.ReplicasOverrideSpec{
 					ReplicasPercentage: tt.percent,
+					MinReplicas:        tt.minReplicas,
+					MaxReplicas:        tt.maxReplicas,
 				},
 			}
 
@@ -71,44 +123,104 @@ func TestCalculateNewReplicas(t *testing.T) {
 
 func TestCalculateHPALimits(t *testing.T) {
 	tests := []struct {
-		name    string
-		minRep  *int32
-		maxRep  int32
-		percent int32
-		wantMin int32
-		wantMax int32
+		name        string
+		minRep      *int32
+		maxRep      int32
+		percent     int32
+		minReplicas *int32
+		maxReplicas *int32
+		wantMin     int32
+		wantMax     int32
 	}{
 		{
-			name:    "100% keeps same limits",
-			minRep:  ptr(int32(2)),
-			maxRep:  10,
-			percent: 100,
-			wantMin: 2,
-			wantMax: 10,
+			name:        "100% keeps same limits",
+			minRep:      ptr(int32(2)),
+			maxRep:      10,
+			percent:     100,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			wantMin:     2,
+			wantMax:     5,
 		},
 		{
-			name:    "150% increases limits",
-			minRep:  ptr(int32(2)),
-			maxRep:  10,
-			percent: 150,
-			wantMin: 3,
-			wantMax: 15,
+			name:        "150% increases limits but respects max",
+			minRep:      ptr(int32(2)),
+			maxRep:      10,
+			percent:     150,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			wantMin:     2,
+			wantMax:     5,
 		},
 		{
-			name:    "50% decreases limits",
-			minRep:  ptr(int32(2)),
-			maxRep:  10,
-			percent: 50,
-			wantMin: 1,
-			wantMax: 5,
+			name:        "50% decreases limits but respects min",
+			minRep:      ptr(int32(2)),
+			maxRep:      10,
+			percent:     50,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			wantMin:     2,
+			wantMax:     5,
 		},
 		{
-			name:    "nil minReplicas defaults to 1",
-			minRep:  nil,
-			maxRep:  10,
-			percent: 150,
-			wantMin: 2,
-			wantMax: 15,
+			name:        "nil minReplicas defaults to 1",
+			minRep:      nil,
+			maxRep:      10,
+			percent:     150,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			wantMin:     2,
+			wantMax:     5,
+		},
+		{
+			name:        "respects min limit (case 1)",
+			minRep:      ptr(int32(3)),
+			maxRep:      10,
+			percent:     10,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			wantMin:     2,
+			wantMax:     5,
+		},
+		{
+			name:        "respects max limit (case 2)",
+			minRep:      ptr(int32(2)),
+			maxRep:      10,
+			percent:     400,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			wantMin:     2,
+			wantMax:     5,
+		},
+		{
+			name:        "respects min limit with small percentage",
+			minRep:      ptr(int32(5)),
+			maxRep:      20,
+			percent:     20,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			wantMin:     2,
+			wantMax:     5,
+		},
+		{
+			name:        "respects max limit with large percentage",
+			minRep:      ptr(int32(3)),
+			maxRep:      15,
+			percent:     500,
+			minReplicas: int32Ptr(2),
+			maxReplicas: int32Ptr(5),
+			wantMin:     2,
+			wantMax:     5,
+		},
+		{
+			name:        "no limits specified",
+			minRep:      ptr(int32(2)),
+			maxRep:      10,
+			percent:     150,
+			minReplicas: nil,
+			maxReplicas: nil,
+			wantMin:     3,
+			wantMax:     15,
 		},
 	}
 
@@ -124,6 +236,8 @@ func TestCalculateHPALimits(t *testing.T) {
 			override := &dynamicscalingv1.ReplicasOverride{
 				Spec: dynamicscalingv1.ReplicasOverrideSpec{
 					ReplicasPercentage: tt.percent,
+					MinReplicas:        tt.minReplicas,
+					MaxReplicas:        tt.maxReplicas,
 				},
 			}
 

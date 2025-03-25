@@ -41,6 +41,7 @@ type GlobalReplicasIgnoreReconciler struct {
 // +kubebuilder:rbac:groups=kubedynamicscaler.io,resources=globalreplicasignores/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=kubedynamicscaler.io,resources=globalreplicasignores/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

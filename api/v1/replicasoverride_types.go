@@ -50,6 +50,18 @@ type ReplicasOverrideSpec struct {
 	// +kubebuilder:validation:Maximum=1000
 	// +kubebuilder:default:=100
 	ReplicasPercentage int32 `json:"replicasPercentage"`
+
+	// MinReplicas specifies the minimum number of replicas allowed.
+	// If not specified, the global minReplicas from the config will be used.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MinReplicas *int32 `json:"minReplicas,omitempty"`
+
+	// MaxReplicas specifies the maximum number of replicas allowed.
+	// If not specified, the global maxReplicas from the config will be used.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxReplicas *int32 `json:"maxReplicas,omitempty"`
 }
 
 // TargetSelector defines how to select deployments for scaling

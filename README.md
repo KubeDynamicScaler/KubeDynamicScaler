@@ -4,7 +4,7 @@
 
 ![KubeDynamicScaler Logo](docs/images/kubedynamicscaler-logo.png)
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/KubeDynamicScaler/kubedynamicscaler)](https://goreportcard.com/report/github.com/KubeDynamicScaler/kubedynamicscaler)
+[![Go Report Card](https://goreportcard.com/badge/github.com/KubeDynamicScaler/KubeDynamicScaler)](https://goreportcard.com/report/github.com/KubeDynamicScaler/KubeDynamicScaler)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Release](https://img.shields.io/github/release/KubeDynamicScaler/kubedynamicscaler.svg)](https://github.com/KubeDynamicScaler/kubedynamicscaler/releases/latest)
 

@@ -115,7 +115,7 @@ var _ = BeforeSuite(func() {
 			Namespace: config.DefaultConfigMapNamespace,
 		},
 		Data: map[string]string{
-			config.ConfigMapKey: `globalPercentage: 100
+			config.ConfigMapKey: `globalPercentage: 200
 maxReplicas: 100
 minReplicas: 1`,
 		},

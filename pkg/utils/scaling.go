@@ -115,6 +115,14 @@ func CalculateNewReplicas(deployment *appsv1.Deployment, override *v1.ReplicasOv
 		result = math.MaxInt32
 	}
 
+	// Apply min and max limits if specified in the override
+	if override.Spec.MinReplicas != nil {
+		result = int32(math.Max(float64(*override.Spec.MinReplicas), float64(result)))
+	}
+	if override.Spec.MaxReplicas != nil {
+		result = int32(math.Min(float64(*override.Spec.MaxReplicas), float64(result)))
+	}
+
 	return result
 }
 
@@ -128,6 +136,23 @@ func CalculateHPALimits(hpa *autoscalingv2.HorizontalPodAutoscaler, override *v1
 	// Calculate new min and max replicas based on percentage
 	newMin := int32(math.Max(1, math.Round(float64(originalMin)*percentage)))
 	newMax := int32(math.Max(float64(newMin), math.Round(float64(originalMax)*percentage)))
+
+	// Apply min and max limits if specified in the override
+	if override.Spec.MinReplicas != nil || override.Spec.MaxReplicas != nil {
+		if override.Spec.MinReplicas != nil {
+			// If min is specified, use it directly
+			newMin = *override.Spec.MinReplicas
+		}
+		if override.Spec.MaxReplicas != nil {
+			// If max is specified, use it directly
+			newMax = *override.Spec.MaxReplicas
+		}
+
+		// Ensure min is not greater than max
+		if newMin > newMax {
+			newMin = newMax
+		}
+	}
 
 	return newMin, newMax
 }

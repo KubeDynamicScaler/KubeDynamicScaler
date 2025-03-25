@@ -7,7 +7,7 @@ spec:
   selector:
     matchLabels:
       workload: critical
-      policy: black-friday
+      #policy: black-friday
   
   # Override type: can be 'override' or 'additive'
   overrideType: override
