@@ -214,6 +214,20 @@ The controller will automatically handle the scaling while respecting:
 - Cluster capacity constraints
 - Workload exclusion rules
 
+
+In this example, the global policy of 150% automatically increases the number of replicas in a new deployment from 4 to 6.
+Then, a 50% override is applied to that specific deployment, reducing the number of replicas from the original 4 to just 2.
+
+![2025-03-2518-12-36-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/6669cf38-a350-489c-9dc3-ab04bf8cb8fe)
+
+
+
+In this example, we created a deployment with 4 replicas, but it initially scaled to 6 replicas due to the global policy of 150%. Then, we applied a selector-based override (using a label) with a value of 300%, which increased the number of replicas from the original 4 to 12.
+
+![2025-03-2518-12-36-ezgif com-video-to-gif-converter (1)](https://github.com/user-attachments/assets/2fec76ef-1630-4f7e-9f29-79756bfcd976)
+
+
+
 ## 🏗️ Architecture
 
 KubeDynamicScaler follows a modular architecture:
