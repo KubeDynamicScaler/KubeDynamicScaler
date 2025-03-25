@@ -172,8 +172,7 @@ func (r *ReplicasOverrideReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			// 6. Process the deployment with the override or global configuration
 			if err := r.processDeployment(ctx, &deployment, override); err != nil {
 				log.Error(err, "Failed to process deployment",
-					"deployment", deployment.Name,
-					"namespace", deployment.Namespace,
+					"deployment", fmt.Sprintf("%s/%s", deployment.Namespace, deployment.Name),
 					"hasOverride", override != nil)
 				continue
 			}
@@ -320,9 +319,8 @@ func (r *ReplicasOverrideReconciler) processDeployment(ctx context.Context, depl
 
 	// Check if update is needed
 	if deployment.Spec.Replicas != nil && *deployment.Spec.Replicas == targetReplicas {
-		log.Info("Deployment already at desired replicas, skipping update",
-			"deployment", deployment.Name,
-			"namespace", deployment.Namespace,
+		log.V(1).Info("Deployment already at desired replicas, skipping update",
+			"deployment", fmt.Sprintf("%s/%s", deployment.Namespace, deployment.Name),
 			"replicas", targetReplicas)
 		return nil
 	}
@@ -332,15 +330,25 @@ func (r *ReplicasOverrideReconciler) processDeployment(ctx context.Context, depl
 	deployment.Annotations[utils.LastUpdateAnnotation] = time.Now().UTC().Format(time.RFC3339)
 
 	log.Info("Updating deployment replicas",
-		"deployment", deployment.Name,
-		"namespace", deployment.Namespace,
-		"originalReplicas", deployment.Annotations[utils.OriginalReplicasAnnotation],
-		"newReplicas", targetReplicas,
+		"deployment", fmt.Sprintf("%s/%s", deployment.Namespace, deployment.Name),
+		"original", deployment.Annotations[utils.OriginalReplicasAnnotation],
+		"target", targetReplicas,
 		"percentage", percentage,
-		"managementMode", deployment.Annotations[utils.ManagementModeAnnotation])
+		"mode", deployment.Annotations[utils.ManagementModeAnnotation])
 
 	// Update the deployment
-	return r.Update(ctx, deployment)
+	err := r.Update(ctx, deployment)
+	if err != nil {
+		log.Error(err, "Failed to update deployment",
+			"deployment", fmt.Sprintf("%s/%s", deployment.Namespace, deployment.Name))
+		return err
+	}
+
+	log.Info("Successfully updated deployment replicas",
+		"deployment", fmt.Sprintf("%s/%s", deployment.Namespace, deployment.Name),
+		"replicas", targetReplicas)
+
+	return nil
 }
 
 func calculateTargetReplicas(deployment *appsv1.Deployment, percentage int32) int32 {
@@ -418,15 +426,26 @@ func (r *ReplicasOverrideReconciler) processHPA(ctx context.Context, hpa *autosc
 	hpa.Annotations[utils.LastHPAUpdateAnnotation] = time.Now().UTC().Format(time.RFC3339)
 
 	log.Info("Updating HPA replicas",
-		"hpa", hpa.Name,
-		"namespace", hpa.Namespace,
-		"originalMinReplicas", hpa.Annotations[utils.OriginalMinReplicasAnnotation],
-		"originalMaxReplicas", hpa.Annotations[utils.OriginalMaxReplicasAnnotation],
-		"newMinReplicas", targetMinReplicas,
-		"newMaxReplicas", targetMaxReplicas,
+		"hpa", fmt.Sprintf("%s/%s", hpa.Namespace, hpa.Name),
+		"original_min", hpa.Annotations[utils.OriginalMinReplicasAnnotation],
+		"original_max", hpa.Annotations[utils.OriginalMaxReplicasAnnotation],
+		"target_min", targetMinReplicas,
+		"target_max", targetMaxReplicas,
 		"percentage", percentage)
 
-	return r.Update(ctx, hpa)
+	err := r.Update(ctx, hpa)
+	if err != nil {
+		log.Error(err, "Failed to update HPA",
+			"hpa", fmt.Sprintf("%s/%s", hpa.Namespace, hpa.Name))
+		return err
+	}
+
+	log.Info("Successfully updated HPA",
+		"hpa", fmt.Sprintf("%s/%s", hpa.Namespace, hpa.Name),
+		"min_replicas", targetMinReplicas,
+		"max_replicas", targetMaxReplicas)
+
+	return nil
 }
 
 // shouldProcessDeployment determines if a deployment should be processed based on the override spec

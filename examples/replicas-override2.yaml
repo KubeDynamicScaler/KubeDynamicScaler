@@ -12,7 +12,7 @@ spec:
   # Override type: can be 'override' or 'additive'
   overrideType: override
   
-  # Scale to 150% of original replicas
+  # Scale to 200% of original replicas
   replicasPercentage: 200
 
 ---

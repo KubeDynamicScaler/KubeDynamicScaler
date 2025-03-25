@@ -52,23 +52,17 @@ func NewManager(client client.Client) *Manager {
 
 // SetupWithManager sets up the manager with the Manager.
 func (m *Manager) SetupWithManager(mgr manager.Manager) error {
-	log := log.Log.WithName("config.Manager")
-	log.Info("Setting up ConfigManager with Manager")
 	// Create a new controller for watching ConfigMap changes
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}).
 		WithEventFilter(predicate.And(
 			predicate.NewPredicateFuncs(func(obj client.Object) bool {
 				// Only watch our specific ConfigMap in our namespace
-				match := obj.GetName() == ConfigMapName && obj.GetNamespace() == m.namespace
-				log.Info("ConfigMap filter", "name", obj.GetName(), "namespace", obj.GetNamespace(), "match", match)
-				return match
+				return obj.GetName() == ConfigMapName && obj.GetNamespace() == m.namespace
 			}),
 			// Only watch ConfigMaps in our namespace
 			predicate.NewPredicateFuncs(func(obj client.Object) bool {
-				match := obj.GetNamespace() == m.namespace
-				log.Info("Namespace filter", "namespace", obj.GetNamespace(), "match", match)
-				return match
+				return obj.GetNamespace() == m.namespace
 			}),
 		)).
 		Complete(m)
@@ -90,7 +84,7 @@ func (m *Manager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result,
 // Start starts watching the ConfigMap for changes
 func (m *Manager) Start(ctx context.Context) error {
 	log := log.FromContext(ctx)
-	log.Info("Starting ConfigManager")
+	log.V(1).Info("Starting ConfigManager")
 
 	// Initial load of configuration
 	if err := m.loadConfig(ctx); err != nil {
@@ -105,15 +99,12 @@ func (m *Manager) Start(ctx context.Context) error {
 func (m *Manager) GetConfig() *GlobalConfig {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	log := log.Log.WithName("config.Manager")
-	log.Info("Getting config", "globalPercentage", m.config.GlobalPercentage)
 	return m.config
 }
 
 // loadConfig loads the configuration from the ConfigMap
 func (m *Manager) loadConfig(ctx context.Context) error {
 	log := log.FromContext(ctx)
-	log.Info("Loading configuration from ConfigMap", "name", ConfigMapName, "namespace", m.namespace)
 
 	// Create a namespaced client
 	namespacedClient := client.NewNamespacedClient(m.client, m.namespace)
@@ -139,14 +130,20 @@ func (m *Manager) loadConfig(ctx context.Context) error {
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+
+	// Only log if configuration actually changed
+	if m.config.GlobalPercentage != config.GlobalPercentage ||
+		m.config.MaxReplicas != config.MaxReplicas ||
+		m.config.MinReplicas != config.MinReplicas {
+		log.Info("Configuration updated",
+			"global_percentage", config.GlobalPercentage,
+			"max_replicas", config.MaxReplicas,
+			"min_replicas", config.MinReplicas)
+	} else {
+		log.V(1).Info("Configuration unchanged")
+	}
+
 	m.config = config
-
-	// Log the loaded configuration
-	log.Info("Configuration loaded successfully",
-		"globalPercentage", config.GlobalPercentage,
-		"maxReplicas", config.MaxReplicas,
-		"minReplicas", config.MinReplicas)
-
 	return nil
 }
 

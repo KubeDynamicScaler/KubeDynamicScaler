@@ -13,5 +13,5 @@ spec:
   # Using additive mode
   overrideType: override
   
-  # Add 50% more replicas
-  replicasPercentage: 200
+  # Add 300% more replicas
+  replicasPercentage: 300
