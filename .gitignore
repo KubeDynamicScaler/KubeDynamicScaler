@@ -5,6 +5,7 @@
 *.so
 *.dylib
 bin/*
+!bin/.gitkeep
 Dockerfile.cross
 
 # Test binary, built with `go test -c`
@@ -12,6 +13,8 @@ Dockerfile.cross
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+*.out.*
+*.bak
 
 # Go workspace file
 go.work
