@@ -218,15 +218,33 @@ The controller will automatically handle the scaling while respecting:
 
 KubeDynamicScaler follows a modular architecture:
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   ConfigMap     │     │   Controller     │     │   Kubernetes    │
-│  (Global Config)│◄────┤  (Reconciler)    │────►│   Resources     │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-       ▲                        ▲                        ▲
-       │                        │                        │
-       └────────────────────────┴────────────────────────┘
-                    ReplicasOverride CRD
+```mermaid
+---
+config:
+  theme: default
+  layout: fixed
+---
+flowchart LR
+ subgraph subGraph0["Global Configuration"]
+        CM["ConfigMap"]
+  end
+ subgraph Controller["Controller"]
+        CTRL["Reconciler"]
+  end
+ subgraph subGraph2["Kubernetes Resources"]
+        K8S["Deployments & HPAs"]
+  end
+ subgraph subGraph3["Custom Resources"]
+        CRD["ReplicasOverride CRD"]
+  end
+    CM <-- watches --> CTRL
+    CTRL <-- manages --> K8S
+    CRD <-- triggers --> CTRL
+    K8S <-- updates --> CRD
+    style CM fill:#f9f,stroke:#333,stroke-width:2px
+    style CTRL fill:#bbf,stroke:#333,stroke-width:2px
+    style K8S fill:#bfb,stroke:#333,stroke-width:2px
+    style CRD fill:#fbb,stroke:#333,stroke-width:2px
 ```
 
 The controller watches for:
