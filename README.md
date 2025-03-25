@@ -12,7 +12,13 @@
 
 > ⚠️ **IMPORTANT DISCLAIMER**: This project is currently under active development and is not yet ready for production use. Features may be incomplete, and breaking changes can occur without notice. We recommend using it only for testing and development purposes until a stable release is announced.
 
-KubeDynamicScaler is an open-source Kubernetes controller that revolutionizes how you manage deployment replicas in your clusters. It provides a flexible, dynamic, and automated way to control application scaling through global configurations and specific overrides, while maintaining safety through exclusion rules.
+KubeDynamicScaler is an open-source Kubernetes controller that revolutionizes how you manage deployment replicas in your clusters. It provides an elegant, Kubernetes-native solution for centralized workload management, replacing traditional scripts and cronjobs used by cluster administrators for mass scaling operations.
+
+Whether you're preparing for Black Friday, performing cluster maintenance, or implementing multi-cluster load balancing, KubeDynamicScaler offers a flexible, dynamic, and automated way to control application scaling through global configurations and specific overrides, while maintaining safety through exclusion rules.
+
+### What KubeDynamicScaler is NOT
+
+KubeDynamicScaler is not a resource optimization tool. It does not compete with solutions like ScaleOps, Perfect Scale, VPA (Vertical Pod Autoscaler), Karpenter, or other automatic resource optimizers. While these tools focus on continuously analyzing and optimizing resource usage based on metrics and patterns, KubeDynamicScaler is specifically designed for controlled, intentional scaling operations.
 
 ## 🌟 Key Features
 
@@ -30,12 +36,15 @@ KubeDynamicScaler is an open-source Kubernetes controller that revolutionizes ho
 
 ## 🎯 Why KubeDynamicScaler?
 
-KubeDynamicScaler addresses common challenges in Kubernetes deployments:
+KubeDynamicScaler addresses common challenges in Kubernetes deployments by providing a Kubernetes-native solution for scenarios that are typically managed through custom scripts and cronjobs. Unlike resource optimization tools that focus on continuous resource usage analysis, KubeDynamicScaler is designed for planned, intentional scaling operations:
 
-- **Cost Optimization**: Automatically adjust replicas based on global policies
-- **Scheduled Events**: Prepares (warms up) the workload for scheduled events such as Black Friday, Cyber ​​Monday, Marketing Campaigns, etc.
-- **Resource Efficiency**: Fine-tune scaling based on actual needs
-- **Enterprise Ready**: Production-tested with monitoring and safety features to avoid the famous scripts with cronjobs for massive changes
+- **Centralized Management**: Replace scattered scripts and cronjobs with a unified, Kubernetes-native solution
+- **Cost Optimization**: Automatically adjust replicas based on global policies without manual intervention
+- **Scheduled Events**: Seamlessly prepare workloads for high-traffic events like Black Friday, Cyber Monday, or Marketing Campaigns
+- **Resource Efficiency**: Fine-tune scaling based on actual needs with built-in safety mechanisms
+- **Enterprise Ready**: Production-tested with monitoring and safety features, eliminating the need for custom maintenance scripts
+- **Flexible Control**: Choose exactly which workloads to scale or exclude from scaling through declarative configurations
+- **Granular Management**: Fine-tune scaling behavior for different environments and workloads with Kubernetes-native controls
 
 ## 🚀 Quick Start
 
@@ -50,20 +59,36 @@ KubeDynamicScaler addresses common challenges in Kubernetes deployments:
 #### Using Helm (Recommended)
 
 ```bash
+# Add the Helm repository
 helm repo add kubedynamicscaler https://kubedynamicscaler.github.io/charts
 helm repo update
-helm install kubedynamicscaler kubedynamicscaler/kubedynamicscaler -n kubedynamicscaler-system --create-namespace
+
+# Install the controller
+helm install kubedynamicscaler kubedynamicscaler/kubedynamicscaler \
+  -n kubedynamicscaler-system \
+  --create-namespace
 ```
 
 #### Using kubectl
 
 ```bash
+# Apply the manifests directly
 kubectl apply -f https://raw.githubusercontent.com/KubeDynamicScaler/kubedynamicscaler/main/deploy/manifests.yaml
+```
+
+### Verify Installation
+
+```bash
+# Check if the controller is running
+kubectl get pods -n kubedynamicscaler-system
+
+# Check if CRDs are installed
+kubectl get crd | grep kubedynamicscaler
 ```
 
 ### Basic Usage
 
-1. Create a global configuration:
+1. Create a global configuration for Black Friday preparation:
 
 ```yaml
 apiVersion: v1
@@ -73,25 +98,209 @@ metadata:
   namespace: kubedynamicscaler-system
 data:
   config.yaml: |
-    globalPercentage: 100
-    maxReplicas: 100
-    minReplicas: 1
+    # Scale all workloads to 200% for Black Friday
+    globalPercentage: 200
+    # Ensure we don't exceed cluster capacity
+    maxReplicas: 600
+    # Keep at least one replica for each workload
+    minReplicas: 2
 ```
 
-2. Create an override for specific deployments:
+2. Create a configuration for cluster split (e.g., load balancing multi-cluster ):
 
 ```yaml
-apiVersion: dynamicscaling.k8s.io/v1
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubedynamicscaler-config
+  namespace: kubedynamicscaler-system
+data:
+  config.yaml: |
+    # Scale down to 50% to prepare for cluster split
+    globalPercentage: 50
+    maxReplicas: 600
+    minReplicas: 2
+```
+
+3. Create overrides for specific workloads:
+
+```yaml
+# Example 1: Scale frontend services by label selector
+apiVersion: kubedynamicscaler.io/v1
 kind: ReplicasOverride
 metadata:
-  name: high-load-override
-  namespace: production
+  name: critical-backend-scale
 spec:
+  # Target all deployments with these labels
   selector:
     matchLabels:
-      tier: frontend
-  overrideType: "override"
+      workload: critical
+      tier: backend
+  # Override mode replaces the global percentage
+  overrideType: override
+  # Scale to 150% of original replicas
   replicasPercentage: 150
+
+---
+# Example 2: Scale a specific deployment directly
+apiVersion: kubedynamicscaler.io/v1
+kind: ReplicasOverride
+metadata:
+  name: catalog-service
+spec:
+  # Direct reference to a specific deployment
+  deploymentRef:
+    name: catalog-service
+    namespace: backend
+  # Additive mode adds to the global percentage
+  overrideType: additive
+  # Add 50% more replicas on top of global percentage
+  replicasPercentage: 150
+
+---
+# Example 3: Scale an HPA-managed workload
+apiVersion: kubedynamicscaler.io/v1
+kind: ReplicasOverride
+metadata:
+  name: catalog-database-scale
+spec:
+  # Reference to a specific HPA
+  hpaRef:
+    name: catalog-database-hpa
+    namespace: backend
+  overrideType: override
+  # Scale to 200% of original replicas
+  replicasPercentage: 200
+```
+
+4. Create ignore rules for specific workloads:
+
+```yaml
+# Example: Define workloads to exclude from scaling
+apiVersion: kubedynamicscaler.io/v1
+kind: GlobalReplicasIgnore
+metadata:
+  name: exclude-workloads
+spec:
+  # Exclude deployments with specific labels
+  ignoreLabels:
+    environment: staging
+    workload: test
+  # Exclude specific namespaces
+  ignoreNamespaces:
+    - development
+    - testing
+  # Exclude specific resources
+  ignoreResources:
+    - kind: Deployment
+      name: staging-api
+      namespace: development
+    - kind: Deployment
+      name: test-database
+      namespace: testing
+```
+
+Each example demonstrates a different use case:
+- Global scaling for events like Black Friday or cluster maintenance
+- Label-based scaling for groups of related services
+- Direct deployment scaling for specific workloads
+- HPA integration for auto-scaling workloads
+- Flexible workload exclusion rules
+
+The controller will automatically handle the scaling while respecting:
+- Original replica counts
+- HPA configurations
+- Minimum and maximum replica limits
+- Cluster capacity constraints
+- Workload exclusion rules
+
+## 🏗️ Architecture
+
+KubeDynamicScaler follows a modular architecture:
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   ConfigMap     │     │   Controller     │     │   Kubernetes    │
+│  (Global Config)│◄────┤  (Reconciler)    │────►│   Resources     │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+       ▲                        ▲                        ▲
+       │                        │                        │
+       └────────────────────────┴────────────────────────┘
+                    ReplicasOverride CRD
+```
+
+The controller watches for:
+- Changes in the global ConfigMap
+- ReplicasOverride CRD instances
+- Deployment and HPA changes
+
+## 🌟 Key Features
+
+### 1. Global Replica Management
+- Define cluster-wide scaling policies
+- Perfect for events like Black Friday or maintenance windows
+- Respects cluster capacity and resource limits
+
+### 2. Selective Overrides
+- Target specific deployments by labels or direct reference
+- Support for both override and additive scaling modes
+- Works seamlessly with existing HPA configurations
+- Fine-grained control over which workloads to scale
+
+### 3. Safety Features
+- Automatic backup of original replica counts
+- Respect for minimum and maximum replica limits
+- Protection against accidental scaling
+- Integration with Kubernetes RBAC
+- Flexible workload exclusion rules
+- System namespace protection
+
+### 4. Monitoring & Observability
+- Built-in Prometheus metrics
+- Detailed status reporting
+- Audit trail of scaling operations
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how you can help:
+
+1. **Report Bugs**
+   - Use the GitHub issue tracker
+   - Include detailed steps to reproduce
+   - Add logs and error messages
+
+2. **Suggest Features**
+   - Create a feature request issue
+   - Explain the use case and benefits
+   - Consider implementation complexity
+
+3. **Submit Pull Requests**
+   - Fork the repository
+   - Create a feature branch
+   - Add tests for new functionality
+   - Update documentation
+   - Follow our coding standards
+
+4. **Improve Documentation**
+   - Fix typos and clarify explanations
+   - Add more examples
+   - Improve formatting
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/KubeDynamicScaler/kubedynamicscaler.git
+cd kubedynamicscaler
+
+# Install dependencies
+make install
+
+# Run tests
+make test
+
+# Build the controller
+make docker-build IMG=kubedynamicscaler:latest
 ```
 
 ## 📚 Documentation
@@ -104,24 +313,22 @@ Visit our [official documentation](https://kubedynamicscaler.io/docs) for:
 - [Best Practices](https://kubedynamicscaler.io/docs/best-practices)
 - [Troubleshooting](https://kubedynamicscaler.io/docs/troubleshooting)
 
-## 🤝 Contributing
-
-We love your input! We want to make contributing to KubeDynamicScaler as easy and transparent as possible. Check out our [Contributing Guide](CONTRIBUTING.md) to get started.
-
-Ways you can contribute:
-- Report bugs
-- Suggest new features
-- Submit pull requests
-- Improve documentation
-- Share your success stories
-
 ## 📅 Roadmap
 
 See our [GitHub Project Board](https://github.com/KubeDynamicScaler/kubedynamicscaler/projects/1) for planned features and enhancements.
 
 Upcoming features:
-
 - [ ] Custom scaling algorithms
+- [ ] Time-based scaling rules
+- [ ] Integration with external metrics
+- [ ] Webhook support for scaling events
+- [ ] Multi-cluster support
+
+## 📫 Community & Support
+
+- [GitHub Discussions](https://github.com/KubeDynamicScaler/kubedynamicscaler/discussions)
+- [Slack Channel](https://kubedynamicscaler.slack.com)
+- [Twitter](https://twitter.com/kubedynamicscaler)
 
 ## 📜 License
 
@@ -130,11 +337,7 @@ KubeDynamicScaler is licensed under the Apache License 2.0 - see the [LICENSE](L
 ## 🌟 Acknowledgments
 
 Special thanks to:
-
 - All our contributors
 - Companies using and supporting KubeDynamicScaler
-
-## 📫 Community & Support
-
-- [GitHub Discussions](https://github.com/KubeDynamicScaler/kubedynamicscaler/discussions)
+- The Kubernetes community for inspiration and tools
 
