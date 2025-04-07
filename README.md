@@ -118,8 +118,8 @@ data:
   config.yaml: |
     # Scale down to 50% to prepare for cluster split
     globalPercentage: 50
-    maxReplicas: 600
-    minReplicas: 2
+    maxReplicas: 600 #max safety margin
+    minReplicas: 2 #min safety margin
 ```
 
 3. Create overrides for specific workloads:
